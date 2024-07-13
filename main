@@ -1,0 +1,69 @@
+import cv2
+import numpy as np
+from Silh_Coef import silhouette_coefficient
+from PIL import Image
+
+imgPath = '/home/liang/Data/BiasData/BrainWeb/T1/clearimg/'
+savePath = '/home/liang/Data/clusterMeasure/'
+imgName = '97.png'
+
+classNum = 7
+iterNum = 200
+p = 2
+minVal = 1e-6
+
+def updateClass(I, up): #I:H*W up:C*H*W
+
+    I = np.expand_dims(I, axis=0) #1*H*W
+    Iup = I * up #C*H*W
+    c = np.sum(Iup, axis=(1,2)) / np.sum(up, axis=(1,2))
+
+    return c
+
+def updateProbMap(D, p, C):
+
+    q = 1 / (p - 1)
+    D = D + minVal
+    f = 1 / (np.power(D, q))
+    f_sum = np.sum(f, axis=0)
+    newu = np.zeros_like(D)
+    for i in range(C):
+        newu[i, :, :] = 1 / (np.power(D[i, :, :], q) * f_sum)
+
+    return newu
+
+if __name__=='__main__':
+
+    img = Image.open(imgPath + imgName)
+    imgGray = img.convert('L')
+    imgGray = np.array(imgGray, dtype=np.float32)
+    H, W = imgGray.shape
+
+    ###############################
+    #initialize probability map: u#
+    u = np.random.rand(classNum, H, W) + minVal
+    u = u / np.sum(u, axis=0)
+    ###############################
+
+    for i in range(iterNum):
+        up = np.power(u, p)
+        classCenter = updateClass(imgGray, up)
+        D = np.zeros_like(u)
+        for j in range(classNum):
+            cc = classCenter[j] * np.ones_like(imgGray)
+            D[j, :, :] = (imgGray - cc) * (imgGray - cc)
+
+        u = updateProbMap(D, p, classNum)
+
+    mask_show = np.zeros_like(imgGray)
+    up = np.power(u, p)
+    classCenter = updateClass(imgGray, up)
+    mask = (u == u.max(axis=0, keepdims=0)).astype(float)
+    index = np.argsort(classCenter)
+    for i in range(classNum):
+        #sort by avg intensity of each tissue
+        mask_show = mask_show + mask[index[i], :, :] * i
+
+    sc = silhouette_coefficient(imgGray, mask_show)
+    print(sc)
+    # cv2.imwrite(savePath + imgName, mask_show)
